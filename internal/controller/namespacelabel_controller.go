@@ -55,14 +55,14 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	log.Info(fmt.Sprintf("get Namespace '%s'", req.Namespace))
 	if err := r.Get(ctx, client.ObjectKey{Name: req.Namespace}, namespace); err != nil {
-		log.Info("Failed to get Namespace %s: %v\n", req.Namespace, err)
+		log.Error(err, fmt.Sprintf("Failed to get Namespace %s: %v\n", req.Namespace, err))
 		return ctrl.Result{}, err
 	}
 
 	log.Info("get NamespaceLabel list\n")
 	namespaceLabelList := &multinamespacelabelv1.NamespaceLabelList{}
 	if err := r.List(ctx, namespaceLabelList, client.InNamespace(req.Namespace)); err != nil {
-		log.Info("Failed to get NamespaceLabel list %v\n", err)
+		log.Error(err, fmt.Sprintf("Failed to get NamespaceLabel list %v\n", err))
 		return ctrl.Result{}, err
 	}
 
@@ -87,7 +87,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, condition)
 				nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusFailed)
 				if err := r.Status().Update(ctx, &nsLabel); err != nil {
-					log.Info("Failed to update crd conflict label status %v\n", err)
+					log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel '%s'- conflict label status %v\n", nsLabel.Name, err))
 					return ctrl.Result{}, err
 				}
 				continue
@@ -108,7 +108,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	namespace.Labels = aggregatedLabels
 
 	if err := r.Update(ctx, namespace); err != nil {
-		log.Info(fmt.Sprintf("Failed to update Namespace '%s' with aggregated Labels: %v\n", namespace.Name, err))
+		log.Error(err, fmt.Sprintf("Failed to update Namespace '%s' with aggregated Labels: %v\n", namespace.Name, err))
 		return ctrl.Result{}, err
 	}
 
@@ -135,7 +135,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 			if err := r.Status().Update(ctx, &nsLabel); err != nil {
 				// Log the error and continue processing other NamespaceLabel instances
-				log.Info(fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
+				log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
 			}
 		}
 
