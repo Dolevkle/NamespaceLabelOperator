@@ -1,0 +1,12 @@
+apiVersion: multinamespacelabel.my.domain/v1
+kind: NamespaceLabel
+metadata:
+  labels:
+    app.kubernetes.io/name: namespacelabel
+    app.kubernetes.io/instance: namespacelabel-sample
+    app.kubernetes.io/part-of: sample-namespacelabel-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: sample-namespacelabel-operator
+  name: namespacelabel-sample
+spec:
+  # TODO(user): Add fields here

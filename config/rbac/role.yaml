@@ -1,0 +1,32 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - multinamespacelabel.my.domain
+  resources:
+  - namespacelabels
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - multinamespacelabel.my.domain
+  resources:
+  - namespacelabels/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - multinamespacelabel.my.domain
+  resources:
+  - namespacelabels/status
+  verbs:
+  - get
+  - patch
+  - update
