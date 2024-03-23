@@ -53,30 +53,30 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	log := log.FromContext(ctx)
 	namespace := &corev1.Namespace{}
 
-	log.Info("get Namespace-", req.Namespace)
+	log.Info(fmt.Sprintf("get Namespace '%s'", req.Namespace))
 	if err := r.Get(ctx, client.ObjectKey{Name: req.Namespace}, namespace); err != nil {
-		log.Info("Failed to get Namespace")
+		log.Info("Failed to get Namespace %s: %v\n", req.Namespace, err)
 		return ctrl.Result{}, err
 	}
 
-	log.Info("get NamespaceLabel list")
+	log.Info("get NamespaceLabel list\n")
 	namespaceLabelList := &multinamespacelabelv1.NamespaceLabelList{}
 	if err := r.List(ctx, namespaceLabelList, client.InNamespace(req.Namespace)); err != nil {
-		log.Info("Failed to get NamespaceLabel list")
+		log.Info("Failed to get NamespaceLabel list %v\n", err)
 		return ctrl.Result{}, err
 	}
 
 	aggregatedLabels := map[string]string{}
-	log.Info("run over NamespaceLabel list")
+	log.Info("run over NamespaceLabel list\n")
 	for _, nsLabel := range namespaceLabelList.Items {
 		for key, value := range nsLabel.Spec.Labels {
-			log.Info("aggregate NamespaceLabel labels")
+			log.Info("aggregate NamespaceLabel labels\n")
 			if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
-				log.Info("skip over app.kubernetes.io/ prefixed labels")
+				log.Info("skip over app.kubernetes.io/ prefixed labels\n")
 				continue // Skip app.kubernetes.io/ prefixed labels
 			}
 			if existingVal, exists := aggregatedLabels[key]; exists && existingVal != value {
-				log.Info(fmt.Sprintf("Conflicting Label '%s' found, update the CRD status", key))
+				log.Info(fmt.Sprintf("Conflicting Label '%s' found, update the CRD status\n", key))
 				// Conflicting label found, update the CRD status
 				condition := metav1.Condition{
 					Type:    string(multinamespacelabelv1.SyncStatusFailed),
@@ -87,7 +87,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, condition)
 				nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusFailed)
 				if err := r.Status().Update(ctx, &nsLabel); err != nil {
-					log.Info("Failed to update crd conflict label status")
+					log.Info("Failed to update crd conflict label status %v\n", err)
 					return ctrl.Result{}, err
 				}
 				continue
@@ -99,21 +99,21 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Preserve existing 'app.kubernetes.io/' prefixed labels from the Namespace
 	for key, value := range namespace.Labels {
 		if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
-			log.Info(fmt.Sprintf("Preserving Label '%s' with value '%s", key, value))
+			log.Info(fmt.Sprintf("Preserving Label '%s' with value '%s'\n", key, value))
 			aggregatedLabels[key] = value
 		}
 	}
 	// Update Namespace with aggregated labels
-	log.Info(fmt.Sprintf("Updating Namespace '%s' with aggregated Labels", namespace.Name))
+	log.Info(fmt.Sprintf("Updating Namespace '%s' with aggregated Labels\n", namespace.Name))
 	namespace.Labels = aggregatedLabels
 
 	if err := r.Update(ctx, namespace); err != nil {
-		log.Info(fmt.Sprintf("Failed to update Namespace '%s' with aggregated Labels", namespace.Name))
+		log.Info(fmt.Sprintf("Failed to update Namespace '%s' with aggregated Labels: %v\n", namespace.Name, err))
 		return ctrl.Result{}, err
 	}
 
 	// Update CRD status to Success for those without conflicts
-	log.Info("Update CRD status to Success for those without conflicts")
+	log.Info("Update CRD status to Success for those without conflicts\n")
 	for _, nsLabel := range namespaceLabelList.Items {
 		hasConflict := false
 		for _, cond := range nsLabel.Status.Conditions {
@@ -124,7 +124,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		if !hasConflict {
 			// If the current NamespaceLabel instance has no conflict, update its status
-			log.Info(fmt.Sprintf("NamespaceLabel '%s' instance has no conflict updating its status", nsLabel.Name))
+			log.Info(fmt.Sprintf("NamespaceLabel '%s' instance has no conflict updating its status\n", nsLabel.Name))
 			nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusCompleted)
 			nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, metav1.Condition{
 				Type:    string(multinamespacelabelv1.SyncStatusCompleted),
