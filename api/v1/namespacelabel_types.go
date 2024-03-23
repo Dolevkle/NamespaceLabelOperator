@@ -28,14 +28,28 @@ type NamespaceLabelSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Name   string            `json:"name,omitempty"`
-	Labels map[string]string `json:"labels,omitempty"`
+	Namespace string            `json:"namespace,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
 }
+
+type Phase string
+
+const (
+	SyncStatusPending   Phase = "Pending"
+	SyncStatusCompleted Phase = "Completed"
+	SyncStatusFailed    Phase = "Failed"
+)
+
+const RecommendedLabelPrefix = "app.kubernetes.io/"
 
 // NamespaceLabelStatus defines the observed state of NamespaceLabel
 type NamespaceLabelStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+
+	// Represents detailed conditions for the CR.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Represents the phase of synchronization (Pending, Completed, Failed)
+	Phase string `json:"phase,omitempty"`
 }
 
 //+kubebuilder:object:root=true
