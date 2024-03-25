@@ -99,13 +99,15 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		r.updateNamespaceLabelStatus(ctx, nsLabel)
 		err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, namespace, r.Client)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to handle NamespaceLabel deletion: %s", err.Error())
+			log.Error(err, fmt.Sprintf("Failed to handle NamespaceLabel deletion: %s", err.Error()))
+			return ctrl.Result{}, err
 		}
 		if isDeleted {
 			return ctrl.Result{}, nil
 		}
 		if err := finalizer.EnsureFinalizer(ctx, nsLabel, r.Client); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to ensure finalizer in NamespaceLabel: %s", err.Error())
+			log.Error(err, fmt.Sprintf("Failed to ensure finalizer in NamespaceLabel: %s", err.Error()))
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -177,14 +179,6 @@ func (r *NamespaceLabelReconciler) aggregateLabels(ctx context.Context, namespac
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&multinamespacelabelv1.NamespaceLabel{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
-		Complete(r)
-}
-
 // updateNamespaceLabelStatus updates namespaceLabel status to success.
 func (r *NamespaceLabelReconciler) updateNamespaceLabelStatus(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel) error {
 	log := log.FromContext(ctx)
@@ -215,4 +209,12 @@ func (r *NamespaceLabelReconciler) updateNamespaceLabelStatus(ctx context.Contex
 		}
 	}
 	return nil
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&multinamespacelabelv1.NamespaceLabel{}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Complete(r)
 }
