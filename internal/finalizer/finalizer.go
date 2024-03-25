@@ -3,6 +3,7 @@ package finalizer
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	multinamespacelabelv1 "my.domain/namespacelabel/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -11,13 +12,12 @@ import (
 const FinalizerCleanupCapp = "multinamespacelabel/cleanup"
 
 // HandleResourceDeletion is responsible for handeling resource deletion
-func HandleNsLabelDeletion(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, r client.Client) (error, bool) {
+func HandleNsLabelDeletion(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, namespace *corev1.Namespace, r client.Client) (error, bool) {
 	if nsLabel.ObjectMeta.DeletionTimestamp != nil {
 		if controllerutil.ContainsFinalizer(&nsLabel, FinalizerCleanupCapp) {
-			//TODO refactor
-			// if err := finalizeService(capp, resourceManagers); err != nil {
-			// 	return err, false
-			// }
+			if err := finalizeService(ctx, nsLabel, namespace, r); err != nil {
+				return err, false
+			}
 			return RemoveFinalizer(ctx, nsLabel, r), true
 		}
 	}
@@ -33,15 +33,25 @@ func RemoveFinalizer(ctx context.Context, nsLabel multinamespacelabelv1.Namespac
 	return nil
 }
 
-// // fnializeService runs the cleanup of all the resource mangers.
-// func finalizeService(capp rcsv1alpha1.Capp, resourceManagers map[string] multinamespacelabelv1.ResourceManager) error {
-// 	for _, manager := range resourceManagers {
-// 		if err := manager.CleanUp(capp); err != nil {
-// 			return err
-// 		}
-// 	}
-// 	return nil
-// }
+// fnializeService runs the cleanup of all the labels of the namespaceLabel from namespace
+func finalizeService(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, namespace *corev1.Namespace, r client.Client) error {
+	// Remove labels that are specified in the NamespaceLabel CRD from the namespace
+	modified := false
+	for key := range nsLabel.Spec.Labels {
+		if _, exists := namespace.Labels[key]; exists {
+			delete(namespace.Labels, key)
+			modified = true
+		}
+	}
+
+	// Update the namespace if any labels were removed
+	if modified {
+		if err := r.Update(ctx, namespace); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // EnsureFinalizer ensures the namespace label has the finalizer.
 func EnsureFinalizer(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, r client.Client) error {

@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	multinamespacelabelv1 "my.domain/namespacelabel/api/v1"
+	"my.domain/namespacelabel/internal/finalizer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -77,7 +78,7 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	//keeps existing 'app.kubernetes.io/' prefixed labels from the Namespace untouche
+	// keeps existing 'app.kubernetes.io/' prefixed labels from the Namespace untouched
 	for key, value := range namespace.Labels {
 		if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
 			log.Info(fmt.Sprintf("Preserving Label '%s' with value '%s'\n", key, value))
@@ -94,20 +95,18 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	// Update CRD status to Success for those without conflicts
-
 	for _, nsLabel := range namespaceLabelList.Items {
 		r.updateNamespaceLabelStatus(ctx, nsLabel)
-		// err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, r.Client)
-		// if err != nil {
-		// 	return ctrl.Result{}, fmt.Errorf("failed to handle NamespaceLabel deletion: %s", err.Error())
-		// }
-		// if isDeleted {
-		// 	return ctrl.Result{}, nil
-		// }
-		// if err := finalizer.EnsureFinalizer(ctx, nsLabel, r.Client); err != nil {
-		// 	return ctrl.Result{}, fmt.Errorf("failed to ensure finalizer in NamespaceLabel: %s", err.Error())
-		// }
+		err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, namespace, r.Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to handle NamespaceLabel deletion: %s", err.Error())
+		}
+		if isDeleted {
+			return ctrl.Result{}, nil
+		}
+		if err := finalizer.EnsureFinalizer(ctx, nsLabel, r.Client); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to ensure finalizer in NamespaceLabel: %s", err.Error())
+		}
 	}
 
 	return ctrl.Result{}, nil
