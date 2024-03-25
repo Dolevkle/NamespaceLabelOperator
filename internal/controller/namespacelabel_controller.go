@@ -69,38 +69,21 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	aggregatedLabels := map[string]string{}
-	log.Info("run over NamespaceLabel list\n")
-	for _, nsLabel := range namespaceLabelList.Items {
-		log.Info("aggregate NamespaceLabel labels\n")
-		for key, value := range nsLabel.Spec.Labels {
-			if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
-				log.Info("skip over app.kubernetes.io/ prefixed labels\n")
-				continue // Skip app.kubernetes.io/ prefixed labels
-			}
-			if existingVal, exists := aggregatedLabels[key]; exists && existingVal != value {
-				log.Info(fmt.Sprintf("Conflicting Label '%s' found, update the CRD status\n", key))
-				// Conflicting label found, update the CRD status
-				condition := metav1.Condition{
-					Type:               string(multinamespacelabelv1.SyncStatusFailed),
-					Status:             metav1.ConditionTrue,
-					Reason:             "LabelConflict",
-					Message:            fmt.Sprintf("Label '%s' has conflicting values", key),
-					LastTransitionTime: metav1.Now(),
-				}
-				nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, condition)
-				nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusFailed)
-				if err := r.Status().Update(ctx, &nsLabel); err != nil {
-					log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel '%s'- conflict label status %v\n", nsLabel.Name, err))
-					return ctrl.Result{}, err
-				}
-				continue
-			}
+	aggregatedLabels := make(map[string]string)
+
+	err := r.aggregateLabels(ctx, namespaceLabelList, aggregatedLabels)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to aggregate NamespaceLabel list labels %v\n", err))
+		return ctrl.Result{}, err
+	}
+
+	//keeps existing 'app.kubernetes.io/' prefixed labels from the Namespace untouche
+	for key, value := range namespace.Labels {
+		if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
+			log.Info(fmt.Sprintf("Preserving Label '%s' with value '%s'\n", key, value))
 			aggregatedLabels[key] = value
 		}
 	}
-
-	preserveNamespaceLabels(ctx, namespace.Labels, aggregatedLabels)
 
 	// Update Namespace with aggregated labels
 	log.Info(fmt.Sprintf("Updating Namespace '%s' with aggregated Labels\n", namespace.Name))
@@ -112,75 +95,22 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Update CRD status to Success for those without conflicts
-	log.Info("Update CRD status to Success for those without conflicts\n")
+
 	for _, nsLabel := range namespaceLabelList.Items {
-		hasConflict := false
-		for _, cond := range nsLabel.Status.Conditions {
-			if cond.Type == string(multinamespacelabelv1.SyncStatusFailed) && cond.Status == metav1.ConditionTrue {
-				hasConflict = true
-				break
-			}
-		}
-		if !hasConflict {
-			// If the current NamespaceLabel instance has no conflict, update its status
-			log.Info(fmt.Sprintf("NamespaceLabel '%s' instance has no conflict updating its status\n", nsLabel.Name))
-			nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusCompleted)
-			nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, metav1.Condition{
-				Type:               string(multinamespacelabelv1.SyncStatusCompleted),
-				Status:             metav1.ConditionTrue,
-				Reason:             "SuccessfulSync",
-				Message:            "Successfully synchronized namespace labels",
-				LastTransitionTime: metav1.Now(),
-			})
-
-			if err := r.Status().Update(ctx, &nsLabel); err != nil {
-				// Log the error and continue processing other NamespaceLabel instances
-				log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
-			}
-		}
-
-		// // TODO move to a function
-		// const namespaceLabelFinalizer = "namespacelabel.finalizers.yourdomain.com"
-		// // Handle finalizer logic
-		// if nsLabel.ObjectMeta.DeletionTimestamp.IsZero() {
-		// 	// The object is not being deleted, so if it does not have our finalizer,
-		// 	// then lets add the finalizer and update the object.
-		// 	if !containsString(nsLabel.ObjectMeta.Finalizers, namespaceLabelFinalizer) {
-		// 		nsLabel.ObjectMeta.Finalizers = append(nsLabel.ObjectMeta.Finalizers, namespaceLabelFinalizer)
-		// 		if err := r.Update(ctx, &nsLabel); err != nil {
-		// 			return ctrl.Result{}, err
-		// 		}
-		// 	}
-		// } else {
-		// 	// The object is being deleted
-		// 	if containsString(nsLabel.ObjectMeta.Finalizers, namespaceLabelFinalizer) {
-		// 		// our finalizer is present, so lets handle any external dependency
-
-		// 		// Remove our finalizer from the list and update it.
-		// 		nsLabel.ObjectMeta.Finalizers = removeString(nsLabel.ObjectMeta.Finalizers, namespaceLabelFinalizer)
-		// 		if err := r.Update(ctx, &nsLabel); err != nil {
-		// 			return ctrl.Result{}, err
-		// 		}
-		// 	}
-
-		// 	// Stop reconciliation as the item is being deleted
+		r.updateNamespaceLabelStatus(ctx, nsLabel)
+		// err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, r.Client)
+		// if err != nil {
+		// 	return ctrl.Result{}, fmt.Errorf("failed to handle NamespaceLabel deletion: %s", err.Error())
+		// }
+		// if isDeleted {
 		// 	return ctrl.Result{}, nil
+		// }
+		// if err := finalizer.EnsureFinalizer(ctx, nsLabel, r.Client); err != nil {
+		// 	return ctrl.Result{}, fmt.Errorf("failed to ensure finalizer in NamespaceLabel: %s", err.Error())
 		// }
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// preserveNamespaceLabels keeps existing 'app.kubernetes.io/' prefixed labels from the Namespace untouched.
-// Therefore preventing overriding the recommended labels.
-func preserveNamespaceLabels(ctx context.Context, labels map[string]string, aggregatedLabels map[string]string) {
-	log := log.FromContext(ctx)
-	for key, value := range labels {
-		if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
-			log.Info(fmt.Sprintf("Preserving Label '%s' with value '%s'\n", key, value))
-			aggregatedLabels[key] = value
-		}
-	}
 }
 
 // ensureNamespace gets namespace by name and if it does not exist it creates one with the provided name
@@ -210,6 +140,44 @@ func (r *NamespaceLabelReconciler) ensureNamespace(ctx context.Context, namespac
 	return nil
 }
 
+// aggregateLabels accumulates namespaceLabels list labels exculding conflicting labels
+// If there are labels with same key and different value it shall update the current namespaceLabel status,
+// and the first label value shall remain
+func (r *NamespaceLabelReconciler) aggregateLabels(ctx context.Context, namespaceLabelList *multinamespacelabelv1.NamespaceLabelList, aggregatedLabels map[string]string) error {
+	log := log.FromContext(ctx)
+
+	log.Info("run over NamespaceLabel list\n")
+	for _, nsLabel := range namespaceLabelList.Items {
+		log.Info("aggregate NamespaceLabel labels\n")
+		for key, value := range nsLabel.Spec.Labels {
+			if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
+				log.Info("skip over app.kubernetes.io/ prefixed labels\n")
+				continue // Skip app.kubernetes.io/ prefixed labels
+			}
+			if existingVal, exists := aggregatedLabels[key]; exists && existingVal != value {
+				log.Info(fmt.Sprintf("Conflicting Label '%s' found, update the CRD status\n", key))
+				// Conflicting label found, update the CRD status
+				condition := metav1.Condition{
+					Type:               string(multinamespacelabelv1.SyncStatusFailed),
+					Status:             metav1.ConditionTrue,
+					Reason:             "LabelConflict",
+					Message:            fmt.Sprintf("Label '%s' has conflicting values", key),
+					LastTransitionTime: metav1.Now(),
+				}
+				nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, condition)
+				nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusFailed)
+				if err := r.Status().Update(ctx, &nsLabel); err != nil {
+					log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel '%s'- conflict label status %v\n", nsLabel.Name, err))
+					return err
+				}
+				continue
+			}
+			aggregatedLabels[key] = value
+		}
+	}
+	return nil
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -218,23 +186,34 @@ func (r *NamespaceLabelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// containsString is a helper function which checks if string contains string
-func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
+// updateNamespaceLabelStatus updates namespaceLabel status to success.
+func (r *NamespaceLabelReconciler) updateNamespaceLabelStatus(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel) error {
+	log := log.FromContext(ctx)
+	log.Info("Update CRD status to Success for those without conflicts\n")
+	hasConflict := false
+	for _, cond := range nsLabel.Status.Conditions {
+		if cond.Type == string(multinamespacelabelv1.SyncStatusFailed) && cond.Status == metav1.ConditionTrue {
+			hasConflict = true
+			break
 		}
 	}
-	return false
-}
+	if !hasConflict {
+		// If the current NamespaceLabel instance has no conflict, update its status
+		log.Info(fmt.Sprintf("NamespaceLabel '%s' instance has no conflict updating its status\n", nsLabel.Name))
+		nsLabel.Status.Phase = string(multinamespacelabelv1.SyncStatusCompleted)
+		nsLabel.Status.Conditions = append(nsLabel.Status.Conditions, metav1.Condition{
+			Type:               string(multinamespacelabelv1.SyncStatusCompleted),
+			Status:             metav1.ConditionTrue,
+			Reason:             "SuccessfulSync",
+			Message:            "Successfully synchronized namespace labels",
+			LastTransitionTime: metav1.Now(),
+		})
 
-// removeString is a helper function which removes string from string
-func removeString(slice []string, s string) []string {
-	result := []string{}
-	for _, item := range slice {
-		if item != s {
-			result = append(result, item)
+		if err := r.Status().Update(ctx, &nsLabel); err != nil {
+			// Log the error and continue processing other NamespaceLabel instances
+			log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
+			return err
 		}
 	}
-	return result
+	return nil
 }
