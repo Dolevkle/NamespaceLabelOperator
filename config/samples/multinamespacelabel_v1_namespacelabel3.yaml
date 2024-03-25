@@ -7,9 +7,9 @@ metadata:
     app.kubernetes.io/part-of: sample-namespacelabel-operator
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: sample-namespacelabel-operator
-  name: namespacelabel-sample
+  name: namespacelabel-sample3
 spec:
   labels:
     label1: hello
     label2: world
-    label3: dolev
+    label4: roni
