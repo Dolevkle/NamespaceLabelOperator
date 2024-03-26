@@ -48,7 +48,7 @@ func TestEnsureFinalizer(t *testing.T) {
 	assert.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: "test-nsLabel", Namespace: "test-ns"}, nsLabel))
 	assert.NoError(t, EnsureFinalizer(ctx, *nsLabel, fakeClient))
 	assert.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: "test-nsLabel", Namespace: "test-ns"}, nsLabel))
-	assert.Contains(t, nsLabel.Finalizers, FinalizerCleanupCapp)
+	assert.Contains(t, nsLabel.Finalizers, FinalizerCleanupNsLabel)
 
 	// Check if there is no error after the finalizer exists.
 	assert.NoError(t, EnsureFinalizer(ctx, *nsLabel, fakeClient))
@@ -67,7 +67,7 @@ func TestRemoveFinalizer(t *testing.T) {
 			Name:      "test-nsLabel",
 			Namespace: "test-ns",
 			Finalizers: []string{
-				FinalizerCleanupCapp,
+				FinalizerCleanupNsLabel,
 			},
 		},
 	}
@@ -76,7 +76,7 @@ func TestRemoveFinalizer(t *testing.T) {
 	assert.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: "test-nsLabel", Namespace: "test-ns"}, nsLabel))
 	assert.NoError(t, RemoveFinalizer(ctx, *nsLabel, fakeClient), "Expected no error when removing finalizer")
 	assert.NoError(t, fakeClient.Get(ctx, types.NamespacedName{Name: "test-nsLabel", Namespace: "test-ns"}, nsLabel))
-	assert.NotContains(t, nsLabel.Finalizers, FinalizerCleanupCapp)
+	assert.NotContains(t, nsLabel.Finalizers, FinalizerCleanupNsLabel)
 
 	// Check if there is no error after the finalizer removed.
 	assert.NoError(t, RemoveFinalizer(ctx, *nsLabel, fakeClient))

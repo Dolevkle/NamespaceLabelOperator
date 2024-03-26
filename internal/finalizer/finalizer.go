@@ -9,12 +9,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const FinalizerCleanupCapp = "multinamespacelabel/cleanup"
+const FinalizerCleanupNsLabel = "multinamespacelabel/cleanup"
 
 // HandleResourceDeletion is responsible for handeling namespaceLabel deletion
 func HandleNsLabelDeletion(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, namespace *corev1.Namespace, r client.Client) (error, bool) {
 	if nsLabel.ObjectMeta.DeletionTimestamp != nil {
-		if controllerutil.ContainsFinalizer(&nsLabel, FinalizerCleanupCapp) {
+		if controllerutil.ContainsFinalizer(&nsLabel, FinalizerCleanupNsLabel) {
 			if err := finalizeNsLabel(ctx, nsLabel, namespace, r); err != nil {
 				return err, false
 			}
@@ -26,7 +26,7 @@ func HandleNsLabelDeletion(ctx context.Context, nsLabel multinamespacelabelv1.Na
 
 // RemoveFinalizer removes the finalizer from the namespaceLabel
 func RemoveFinalizer(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, r client.Client) error {
-	controllerutil.RemoveFinalizer(&nsLabel, FinalizerCleanupCapp)
+	controllerutil.RemoveFinalizer(&nsLabel, FinalizerCleanupNsLabel)
 	if err := r.Update(ctx, &nsLabel); err != nil {
 		return err
 	}
@@ -55,8 +55,8 @@ func finalizeNsLabel(ctx context.Context, nsLabel multinamespacelabelv1.Namespac
 
 // EnsureFinalizer ensures the namespace label has the finalizer.
 func EnsureFinalizer(ctx context.Context, nsLabel multinamespacelabelv1.NamespaceLabel, r client.Client) error {
-	if !controllerutil.ContainsFinalizer(&nsLabel, FinalizerCleanupCapp) {
-		controllerutil.AddFinalizer(&nsLabel, FinalizerCleanupCapp)
+	if !controllerutil.ContainsFinalizer(&nsLabel, FinalizerCleanupNsLabel) {
+		controllerutil.AddFinalizer(&nsLabel, FinalizerCleanupNsLabel)
 		if err := r.Update(ctx, &nsLabel); err != nil {
 			return err
 		}
