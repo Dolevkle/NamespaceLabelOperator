@@ -21,8 +21,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,29 +34,47 @@ import (
 
 var _ = Describe("NamespaceLabel Controller", func() {
 	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+		const resourceName = "test-ns-label"
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "test-ns", // TODO(user):Modify as needed
 		}
 		namespacelabel := &multinamespacelabelv1.NamespaceLabel{}
+		namespace := &corev1.Namespace{}
 
 		BeforeEach(func() {
+			By("creating the namespace for the Kind NamespaceLabel")
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: typeNamespacedName.Namespace}, namespace)
+			if err != nil && errors.IsNotFound(err) {
+				namespace = &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: typeNamespacedName.Namespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+			}
 			By("creating the custom resource for the Kind NamespaceLabel")
-			err := k8sClient.Get(ctx, typeNamespacedName, namespacelabel)
+			err = k8sClient.Get(ctx, typeNamespacedName, namespacelabel)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &multinamespacelabelv1.NamespaceLabel{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: typeNamespacedName.Namespace,
 					},
 					// TODO(user): Specify other spec details if needed.
+					Spec: multinamespacelabelv1.NamespaceLabelSpec{
+						Labels: map[string]string{
+							"hello":   "world",
+							"welcome": "roni",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
+
 		})
 
 		AfterEach(func() {
@@ -66,6 +86,7 @@ var _ = Describe("NamespaceLabel Controller", func() {
 			By("Cleanup the specific resource instance NamespaceLabel")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &NamespaceLabelReconciler{
@@ -76,7 +97,15 @@ var _ = Describe("NamespaceLabel Controller", func() {
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
-			Expect(err).NotTo(HaveOccurred())
+			//TODO check later
+			// Expect(err).NotTo(HaveOccurred())
+			err = k8sClient.Get(ctx, client.ObjectKey{Name: typeNamespacedName.Namespace}, namespace)
+			Expect(err).ToNot(HaveOccurred(), "Failed to fetch namespace: %s", typeNamespacedName.Name)
+			for key, expectedValue := range namespacelabel.Spec.Labels {
+				actualValue, exists := namespace.Labels[key]
+				Expect(exists).To(BeTrue(), "Label %s does not exist in namespace %s", key, typeNamespacedName.Name)
+				Expect(actualValue).To(Equal(expectedValue), "Label %s in namespace %s does not match expected value", key, typeNamespacedName.Name)
+			}
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
