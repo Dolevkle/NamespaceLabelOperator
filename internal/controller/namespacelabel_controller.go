@@ -96,7 +96,10 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	for _, nsLabel := range namespaceLabelList.Items {
-		r.updateNamespaceLabelStatus(ctx, nsLabel)
+		if err := r.updateNamespaceLabelStatus(ctx, nsLabel); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
+			return ctrl.Result{}, err
+		}
 		err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, namespace, r.Client)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("Failed to handle NamespaceLabel deletion: %s", err.Error()))
@@ -203,8 +206,6 @@ func (r *NamespaceLabelReconciler) updateNamespaceLabelStatus(ctx context.Contex
 		})
 
 		if err := r.Status().Update(ctx, &nsLabel); err != nil {
-			// Log the error and continue processing other NamespaceLabel instances
-			log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
 			return err
 		}
 	}
