@@ -72,13 +72,14 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	aggregatedLabels := make(map[string]string)
 
+	// Accumulating CRS lables for populating them in namespace
 	err := r.aggregateLabels(ctx, namespaceLabelList, aggregatedLabels)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to aggregate NamespaceLabel list labels %v\n", err))
 		return ctrl.Result{}, err
 	}
 
-	// keeps existing 'app.kubernetes.io/' prefixed labels from the Namespace untouched
+	// Keeps existing 'app.kubernetes.io/' prefixed labels from the Namespace untouched
 	for key, value := range namespace.Labels {
 		if strings.HasPrefix(key, multinamespacelabelv1.RecommendedLabelPrefix) {
 			log.Info(fmt.Sprintf("Preserving Label '%s' with value '%s'\n", key, value))
@@ -95,23 +96,10 @@ func (r *NamespaceLabelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	for _, nsLabel := range namespaceLabelList.Items {
-		if err := r.updateNamespaceLabelStatus(ctx, nsLabel); err != nil {
-			log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
-			return ctrl.Result{}, err
-		}
-		err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, namespace, r.Client)
-		if err != nil {
-			log.Error(err, fmt.Sprintf("Failed to handle NamespaceLabel deletion: %s", err.Error()))
-			return ctrl.Result{}, err
-		}
-		if isDeleted {
-			return ctrl.Result{}, nil
-		}
-		if err := finalizer.EnsureFinalizer(ctx, nsLabel, r.Client); err != nil {
-			log.Error(err, fmt.Sprintf("Failed to ensure finalizer in NamespaceLabel: %s", err.Error()))
-			return ctrl.Result{}, err
-		}
+	// Cleaning up namespaceLabelList, updating namespaceLabels statuses and finalizing them
+	if err := r.cleanupNamespaceLabelList(ctx, namespaceLabelList, namespace); err != nil {
+		log.Error(err, fmt.Sprintf("Failed to fully clean up NamespaceLabel list labels %v\n", err))
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
@@ -206,6 +194,31 @@ func (r *NamespaceLabelReconciler) updateNamespaceLabelStatus(ctx context.Contex
 		})
 
 		if err := r.Status().Update(ctx, &nsLabel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// cleanupNamespaceLabelList updates each namespaceLabel status and finalize the namespaceLabel
+func (r *NamespaceLabelReconciler) cleanupNamespaceLabelList(ctx context.Context, namespaceLabelList *multinamespacelabelv1.NamespaceLabelList, namespace *corev1.Namespace) error {
+	log := log.FromContext(ctx)
+
+	for _, nsLabel := range namespaceLabelList.Items {
+		if err := r.updateNamespaceLabelStatus(ctx, nsLabel); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to update NamespaceLabel status for %s: %v\n", nsLabel.Name, err))
+			return err
+		}
+		err, isDeleted := finalizer.HandleNsLabelDeletion(ctx, nsLabel, namespace, r.Client)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Failed to handle NamespaceLabel deletion: %s", err.Error()))
+			return err
+		}
+		if isDeleted {
+			return nil
+		}
+		if err := finalizer.EnsureFinalizer(ctx, nsLabel, r.Client); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to ensure finalizer in NamespaceLabel: %s", err.Error()))
 			return err
 		}
 	}
