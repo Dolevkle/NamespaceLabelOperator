@@ -1,9 +1,8 @@
 # sample-namespacelabel-operator
-// TODO(user): Add simple overview of use/purpose
-
+This is namespace label operator developed with kubebuilder
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
-
+This operator sync between namespace label CR labels and namespace labels. 
+This is done without harming the kubernetes recommended labels
 ## Getting Started
 
 ### Prerequisites
